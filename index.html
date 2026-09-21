@@ -8,10 +8,14 @@
 <meta name="apple-mobile-web-app-title" content="Calories">
 <meta name="theme-color" content="#111">
 <link rel="manifest" href="manifest.json">
+<!-- Icon art: Noto Emoji avocado (github.com/googlefonts/noto-emoji), Apache License 2.0 -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Calories</title>
 <style>
-  :root { --bg:#fff; --fg:#111; --muted:#888; --line:#e5e5e5; --card:#f5f5f5; --accent:#2f7d4f; --err:#c0392b; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --line:#2a2a2a; --card:#1c1c1c; } }
+  :root { --bg:#fff; --fg:#111; --muted:#888; --line:#e5e5e5; --card:#f5f5f5; --accent:#2f7d4f; --err:#c0392b;
+          --protein:#8e44ad; --carbs:#e67e22; --fat:#27ae60; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --line:#2a2a2a; --card:#1c1c1c;
+          --protein:#c39bd3; --carbs:#f0a04b; --fat:#52c77f; } }
   * { box-sizing:border-box; }
   html { background:var(--bg); }
   /* Fixed-height column: top bar and composer stay put, only #scroll scrolls. */
@@ -26,7 +30,8 @@
   header h1 { flex:1; text-align:center; font-size:18px; margin:0; }
   .totals { text-align:center; margin:16px 0 20px; }
   .totals b { font-size:44px; display:block; }
-  .totals span { color:var(--muted); white-space:pre-line; font-size:15px; }
+  #macros { color:var(--muted); white-space:pre-line; font-size:15px; }
+  .m { font-weight:600; } .m.p { color:var(--protein); } .m.c { color:var(--carbs); } .m.f { color:var(--fat); }
   .card { display:flex; align-items:center; gap:8px; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
   .card div { flex:1; min-width:0; }
   .card small { color:var(--muted); display:block; margin-top:2px; }
@@ -110,25 +115,39 @@
 
   const system = () => 'You are a nutrition and exercise estimator for a personal log. The user either logs a meal (text and/or photo) ' +
     'or an exercise they did. Set `kind` accordingly.\n' +
-    'Meal: estimate portion sizes and return calories and macros for the whole meal.\n' +
-    'Exercise: return `calories` as active calories burned (above resting), and 0 for all macros. ' +
+    'Meal: list each food as an item with its estimated portion, calories and macros.\n' +
+    'Exercise: list each activity as an item; `calories` is active calories burned (above resting), macros are 0. ' +
     'Base the estimate on the user profile below.\n' +
-    'In `reply`, briefly state what you assumed (items and portions, or intensity and duration). ' +
-    'When the user corrects you, return the full revised totals for the whole entry, not just the change. ' +
-    '`name` is a short label, e.g. "Eggs and toast" or "Running, 30 min".\n\n' +
+    'An entry can span several messages. `items` must ALWAYS be the complete list for the whole entry so far: ' +
+    'keep every item from earlier replies and add new ones (e.g. "also a coffee" adds a coffee item). ' +
+    'Only change an existing item when the user corrects it (e.g. "it was 3 eggs" revises the eggs item). ' +
+    'Never return just the new item. The app sums `items`, so do not include a total item.\n' +
+    'In `reply`, briefly state what you assumed (portions, or intensity and duration). ' +
+    '`name` is a short label for the whole entry, e.g. "Eggs, toast and coffee" or "Running, 30 min".\n\n' +
     'User profile: ' + load('profile', DEFAULT_PROFILE);
   const SCHEMA = {
     type: 'object',
     properties: {
       kind: { type: 'string', enum: ['meal', 'exercise'] },
       name: { type: 'string' },
-      calories: { type: 'integer' },
-      protein_g: { type: 'number' },
-      carbs_g: { type: 'number' },
-      fat_g: { type: 'number' },
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            calories: { type: 'integer' },
+            protein_g: { type: 'number' },
+            carbs_g: { type: 'number' },
+            fat_g: { type: 'number' },
+          },
+          required: ['name', 'calories', 'protein_g', 'carbs_g', 'fat_g'],
+          additionalProperties: false,
+        },
+      },
       reply: { type: 'string' },
     },
-    required: ['kind', 'name', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'reply'],
+    required: ['kind', 'name', 'items', 'reply'],
     additionalProperties: false,
   };
 
@@ -174,8 +193,7 @@
     $('day').textContent = isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
     $('next').disabled = isToday;
     $('kcal').textContent = `${r(eaten - burned)} kcal`;
-    $('macros').textContent = `Eaten ${r(eaten)} − Exercise ${r(burned)}\n` +
-      `P ${r(sum('protein'))}g · C ${r(sum('carbs'))}g · F ${r(sum('fat'))}g`;
+    $('macros').replaceChildren(`Eaten ${r(eaten)} − Exercise ${r(burned)}\n`, ...macroSpans(sum('protein'), sum('carbs'), sum('fat')));
 
     const meal = meals.find(m => m.id === openId);
     if (!meal) openId = null;
@@ -186,19 +204,27 @@
     if (meal) {
       const back = el('button', '‹ All entries', { id: 'back', type: 'button', onclick: () => { openId = null; render(); } });
       $('thread').replaceChildren(back, card(meal),
-        ...meal.thread.map(t => el('div', t.role === 'user' ? (t.photo ? '📷 ' : '') + t.text : JSON.parse(t.text).reply, { className: 'msg ' + t.role })));
+        ...meal.thread.map(t => el('div', t.role === 'user' ? (t.photo ? '📷 ' : '') + t.text : replyText(JSON.parse(t.text)), { className: 'msg ' + t.role })));
       $('scroll').scrollTop = $('scroll').scrollHeight; // chat opens at the latest message
     } else {
       $('meals').replaceChildren(...(meals.length ? meals.map(card) : [el('p', 'Nothing logged yet.', { className: 'empty' })]));
     }
   }
 
+  // Claude's reply plus the item breakdown the entry's totals are summed from (older replies have no items).
+  const replyText = out => [out.reply, ...(out.items ?? []).map(i => `• ${i.name}: ${i.calories} kcal`)].join('\n');
+
+  // Protein purple, carbs orange, fat green.
+  const macroSpans = (p, c, f) => [el('span', `P ${r(p)}g`, { className: 'm p' }), ' · ',
+    el('span', `C ${r(c)}g`, { className: 'm c' }), ' · ', el('span', `F ${r(f)}g`, { className: 'm f' })];
+
   function card(m) {
     const c = el('div', '', { className: 'card', onclick: () => { openId = m.id; render(); } });
     const isExercise = m.kind === 'exercise';
     const info = el('div', (isExercise ? '🏃 ' : '') + m.name);
-    info.append(el('small', isExercise ? `${m.calories} kcal burned`
-      : `${m.calories} kcal · P ${r(m.protein)}g · C ${r(m.carbs)}g · F ${r(m.fat)}g`));
+    const detail = el('small', isExercise ? `${m.calories} kcal burned` : `${m.calories} kcal · `);
+    if (!isExercise) detail.append(...macroSpans(m.protein, m.carbs, m.fat));
+    info.append(detail);
     const del = el('button', '×', { className: 'x', type: 'button', ariaLabel: 'Delete meal', onclick: e => {
       e.stopPropagation();
       save(dayKey(), load(dayKey(), []).filter(x => x.id !== m.id));
@@ -277,8 +303,9 @@
     try {
       const raw = await ask(thread, photo);
       const out = JSON.parse(raw);
-      const updated = { id: meal?.id ?? crypto.randomUUID(), kind: out.kind, name: out.name, calories: out.calories,
-        protein: out.protein_g, carbs: out.carbs_g, fat: out.fat_g, thread: [...thread, { role: 'assistant', text: raw }] };
+      const total = f => out.items.reduce((s, i) => s + i[f], 0);
+      const updated = { id: meal?.id ?? crypto.randomUUID(), kind: out.kind, name: out.name, calories: total('calories'),
+        protein: total('protein_g'), carbs: total('carbs_g'), fat: total('fat_g'), thread: [...thread, { role: 'assistant', text: raw }] };
       const fresh = load(key, []); // re-read so a delete made while waiting isn't undone
       save(key, meal ? fresh.map(m => m.id === meal.id ? updated : m) : [...fresh, updated]);
       openId = updated.id;

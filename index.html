@@ -31,7 +31,9 @@
   .totals { text-align:center; margin:16px 0 20px; }
   .totals b { font-size:44px; display:block; }
   #macros { color:var(--muted); white-space:pre-line; font-size:15px; }
-  .m { font-weight:600; } .m.p { color:var(--protein); } .m.c { color:var(--carbs); } .m.f { color:var(--fat); }
+  .m { font-weight:600; font-size:13px; display:inline-block; padding:2px 9px; margin:4px 2px 0; border-radius:999px;
+       background:color-mix(in srgb, currentColor 18%, transparent); }
+  .m.p { color:var(--protein); } .m.c { color:var(--carbs); } .m.f { color:var(--fat); }
   .card { display:flex; align-items:center; gap:8px; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
   .card div { flex:1; min-width:0; }
   .card small { color:var(--muted); display:block; margin-top:2px; }
@@ -57,6 +59,9 @@
   #preview img { height:56px; border-radius:8px; }
   dialog { border:0; border-radius:14px; background:var(--card); color:var(--fg); width:min(90vw, 400px); }
   dialog input, dialog textarea { display:block; width:100%; font:inherit; padding:10px; margin:10px 0; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); }
+  dialog::backdrop { background:rgba(0,0,0,.55); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
+  #settings .close { position:absolute; top:6px; right:6px; width:36px; height:36px; font-size:22px; color:var(--muted); }
+  #save { display:block; margin-left:auto; background:#0a84ff; color:#fff; border-radius:10px; padding:8px 18px; font-weight:600; }
   #calendar { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; text-align:center; margin-top:16px; }
   #calendar b { font-size:13px; color:var(--muted); }
   #calendar button { background:var(--card); border-radius:10px; min-height:52px; font-size:15px; padding:4px 0; }
@@ -91,7 +96,7 @@
   <div id="preview" hidden><img alt="Selected photo"><button type="button" id="unphoto" aria-label="Remove photo">×</button></div>
   <div class="row">
     <label class="cam" aria-label="Add photo"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg><input id="photo" type="file" accept="image/*" hidden></label>
-    <textarea id="text" rows="1" placeholder="What did you eat or do?"></textarea>
+    <textarea id="text" rows="1" placeholder="Add entry here"></textarea>
     <button id="send" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></button>
   </div>
 </form>
@@ -102,7 +107,9 @@
     <input id="key" type="password" autocomplete="off" placeholder="sk-ant-…">
     <b>Profile (used to estimate exercise)</b>
     <textarea id="profile" rows="4"></textarea>
-    <button>Save</button>
+    <button id="save" value="save">Save</button>
+    <!-- after Save so Enter submits Save, not × -->
+    <button class="close" value="cancel" aria-label="Close">×</button>
   </form>
 </dialog>
 
@@ -199,7 +206,7 @@
     if (!meal) openId = null;
     $('meals').hidden = !!meal;
     $('thread').hidden = !meal;
-    $('text').placeholder = meal ? 'Correct this entry…' : 'What did you eat or do?';
+    $('text').placeholder = meal ? 'Correct this entry…' : 'Add entry here';
 
     if (meal) {
       const back = el('button', '‹ All entries', { id: 'back', type: 'button', onclick: () => { openId = null; render(); } });
@@ -215,14 +222,14 @@
   const replyText = out => [out.reply, ...(out.items ?? []).map(i => `• ${i.name}: ${i.calories} kcal`)].join('\n');
 
   // Protein purple, carbs orange, fat green.
-  const macroSpans = (p, c, f) => [el('span', `P ${r(p)}g`, { className: 'm p' }), ' · ',
-    el('span', `C ${r(c)}g`, { className: 'm c' }), ' · ', el('span', `F ${r(f)}g`, { className: 'm f' })];
+  const macroSpans = (p, c, f) => [el('span', `Protein ${r(p)}g`, { className: 'm p' }),
+    el('span', `Carbs ${r(c)}g`, { className: 'm c' }), el('span', `Fat ${r(f)}g`, { className: 'm f' })];
 
   function card(m) {
     const c = el('div', '', { className: 'card', onclick: () => { openId = m.id; render(); } });
     const isExercise = m.kind === 'exercise';
     const info = el('div', (isExercise ? '🏃 ' : '') + m.name);
-    const detail = el('small', isExercise ? `${m.calories} kcal burned` : `${m.calories} kcal · `);
+    const detail = el('small', isExercise ? `${m.calories} kcal burned` : `${m.calories} kcal `);
     if (!isExercise) detail.append(...macroSpans(m.protein, m.carbs, m.fat));
     info.append(detail);
     const del = el('button', '×', { className: 'x', type: 'button', ariaLabel: 'Delete meal', onclick: e => {
@@ -346,10 +353,14 @@
   function openSettings() {
     $('key').value = load('apiKey', '');
     $('profile').value = load('profile', DEFAULT_PROFILE);
+    $('settings').returnValue = ''; // Escape keeps the old returnValue, so reset it to avoid saving on cancel
     $('settings').showModal();
   }
   $('gear').onclick = openSettings;
+  // Any delete wipes the whole key; beforeinput catches mobile keyboards where keydown is unreliable.
+  $('key').addEventListener('beforeinput', e => { if (e.inputType.startsWith('delete')) { e.preventDefault(); $('key').value = ''; } });
   $('settings').onclose = () => {
+    if ($('settings').returnValue !== 'save') return; // × or Escape discards edits
     if ($('key').value.trim()) save('apiKey', $('key').value.trim());
     if ($('profile').value.trim()) save('profile', $('profile').value.trim());
     render();

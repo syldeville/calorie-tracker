@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Calories">
+<meta name="theme-color" content="#111">
+<link rel="manifest" href="manifest.json">
+<title>Calories</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#888; --line:#e5e5e5; --card:#f5f5f5; --accent:#2f7d4f; --err:#c0392b; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --line:#2a2a2a; --card:#1c1c1c; } }
+  * { box-sizing:border-box; }
+  body { margin:0 auto; max-width:520px; background:var(--bg); color:var(--fg); font:17px -apple-system, system-ui, sans-serif;
+         padding:max(12px, env(safe-area-inset-top)) 16px 170px; }
+  button { font:inherit; border:0; background:none; color:var(--fg); cursor:pointer; }
+  header { display:flex; align-items:center; gap:4px; }
+  header button { font-size:22px; width:44px; height:44px; }
+  header h1 { flex:1; text-align:center; font-size:18px; margin:0; }
+  .totals { text-align:center; margin:16px 0 20px; }
+  .totals b { font-size:44px; display:block; }
+  .totals span { color:var(--muted); white-space:pre-line; font-size:15px; }
+  .card { display:flex; align-items:center; gap:8px; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
+  .card div { flex:1; min-width:0; }
+  .card small { color:var(--muted); display:block; margin-top:2px; }
+  .card .x { color:var(--muted); font-size:22px; width:36px; height:36px; }
+  .empty { color:var(--muted); text-align:center; }
+  .msg { padding:10px 14px; border-radius:16px; margin:8px 0; max-width:85%; white-space:pre-wrap; }
+  .msg.user { background:var(--accent); color:#fff; margin-left:auto; }
+  .msg.assistant { background:var(--card); }
+  #back { color:var(--accent); padding:8px 0; }
+  #status { color:var(--muted); text-align:center; min-height:1.4em; }
+  #status.err { color:var(--err); }
+  form#composer { position:fixed; left:0; right:0; bottom:0; background:var(--bg); border-top:1px solid var(--line);
+                  padding:10px 16px max(10px, env(safe-area-inset-bottom)); }
+  .row { display:flex; gap:8px; align-items:flex-end; max-width:520px; margin:0 auto; }
+  textarea { flex:1; font:inherit; resize:none; padding:10px 12px; border:1px solid var(--line); border-radius:18px;
+             background:var(--bg); color:var(--fg); max-height:120px; }
+  .cam { color:var(--muted); height:44px; width:44px; display:grid; place-items:center; cursor:pointer; }
+  #send { background:var(--accent); color:#fff; border-radius:50%; height:44px; width:44px; display:grid; place-items:center; flex-shrink:0; }
+  .icon { width:22px; height:22px; display:block; }
+  header #cal { display:grid; place-items:center; }
+  #send:disabled { opacity:.5; }
+  #preview { max-width:520px; margin:0 auto 8px; display:flex; align-items:center; gap:8px; }
+  #preview img { height:56px; border-radius:8px; }
+  dialog { border:0; border-radius:14px; background:var(--card); color:var(--fg); width:min(90vw, 400px); }
+  dialog input, dialog textarea { display:block; width:100%; font:inherit; padding:10px; margin:10px 0; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); }
+  #calendar { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; text-align:center; margin-top:16px; }
+  #calendar b { font-size:13px; color:var(--muted); }
+  #calendar button { background:var(--card); border-radius:10px; min-height:52px; font-size:15px; padding:4px 0; }
+  #calendar button small { display:block; font-size:11px; color:var(--accent); }
+  #calendar button.today { outline:2px solid var(--accent); }
+  #calendar button:disabled { opacity:.35; }
+  .cal .totals, .cal #meals, .cal #thread, .cal #composer, .cal #status { display:none !important; }
+  body:not(.cal) #calendar { display:none; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <button id="prev" aria-label="Previous day">‹</button>
+  <h1 id="day"></h1>
+  <button id="next" aria-label="Next day">›</button>
+  <!-- Icons: Lucide (lucide.dev), ISC license -->
+  <button id="cal" aria-label="Calendar"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg></button>
+  <button id="gear" aria-label="Settings">⚙︎</button>
+</header>
+
+<main id="calendar"></main>
+<div class="totals"><b id="kcal">0</b><span id="macros"></span></div>
+
+<main id="meals"></main>
+<main id="thread" hidden></main>
+<p id="status"></p>
+
+<form id="composer">
+  <div id="preview" hidden><img alt="Selected photo"><button type="button" id="unphoto" aria-label="Remove photo">×</button></div>
+  <div class="row">
+    <label class="cam" aria-label="Add photo"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/></svg><input id="photo" type="file" accept="image/*" hidden></label>
+    <textarea id="text" rows="1" placeholder="What did you eat or do?"></textarea>
+    <button id="send" aria-label="Send"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg></button>
+  </div>
+</form>
+
+<dialog id="settings">
+  <form method="dialog">
+    <b>Anthropic API key</b>
+    <input id="key" type="password" autocomplete="off" placeholder="sk-ant-…">
+    <b>Profile (used to estimate exercise)</b>
+    <textarea id="profile" rows="4"></textarea>
+    <button>Save</button>
+  </form>
+</dialog>
+
+<script type="module">
+  import Anthropic from 'https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.127.0/+esm';
+
+  const MODEL = 'claude-opus-5'; // swap to 'claude-sonnet-5' for cheaper estimates
+  const DEFAULT_PROFILE = `5'4", 130 lb, 31 years old, 24% body fat, 21.8% subcutaneous fat, ` +
+    'fat-free body weight 99.8 lb, muscle mass 93.8 lb, BMR 1351 kcal, sedentary lifestyle.';
+
+  const system = () => 'You are a nutrition and exercise estimator for a personal log. The user either logs a meal (text and/or photo) ' +
+    'or an exercise they did. Set `kind` accordingly.\n' +
+    'Meal: estimate portion sizes and return calories and macros for the whole meal.\n' +
+    'Exercise: return `calories` as active calories burned (above resting), and 0 for all macros. ' +
+    'Base the estimate on the user profile below.\n' +
+    'In `reply`, briefly state what you assumed (items and portions, or intensity and duration). ' +
+    'When the user corrects you, return the full revised totals for the whole entry, not just the change. ' +
+    '`name` is a short label, e.g. "Eggs and toast" or "Running, 30 min".\n\n' +
+    'User profile: ' + load('profile', DEFAULT_PROFILE);
+  const SCHEMA = {
+    type: 'object',
+    properties: {
+      kind: { type: 'string', enum: ['meal', 'exercise'] },
+      name: { type: 'string' },
+      calories: { type: 'integer' },
+      protein_g: { type: 'number' },
+      carbs_g: { type: 'number' },
+      fat_g: { type: 'number' },
+      reply: { type: 'string' },
+    },
+    required: ['kind', 'name', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'reply'],
+    additionalProperties: false,
+  };
+
+  const $ = id => document.getElementById(id);
+  const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const dayKey = (d = day) => 'day:' + d.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+  const r = n => Math.round(n);
+  const sumOf = (entries, f, kind = 'meal') => entries.filter(m => (m.kind ?? 'meal') === kind).reduce((s, m) => s + m[f], 0);
+  const netOf = entries => sumOf(entries, 'calories') - sumOf(entries, 'calories', 'exercise');
+
+  let day = new Date();
+  let calMonth = null; // first of the month shown in calendar view; null = day view
+  let openId = null; // meal whose thread is shown; null = meal list
+  let photo = null;  // base64 JPEG of the pending photo, discarded after sending
+
+  function renderCalendar() {
+    const y = calMonth.getFullYear(), mo = calMonth.getMonth(), now = new Date();
+    $('day').textContent = calMonth.toLocaleDateString(undefined, { month:'long', year:'numeric' });
+    $('next').disabled = y === now.getFullYear() && mo === now.getMonth();
+
+    const cells = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => el('b', d));
+    for (let i = 0; i < calMonth.getDay(); i++) cells.push(el('span', ''));
+    for (let n = 1; n <= new Date(y, mo + 1, 0).getDate(); n++) {
+      const d = new Date(y, mo, n), entries = load(dayKey(d), []);
+      const btn = el('button', n, { type: 'button', disabled: d > now, onclick: () => { day = d; calMonth = null; openId = null; render(); } });
+      btn.classList.toggle('today', d.toDateString() === now.toDateString());
+      if (entries.length) btn.append(el('small', r(netOf(entries))));
+      cells.push(btn);
+    }
+    $('calendar').replaceChildren(...cells);
+  }
+
+  function render() {
+    document.body.classList.toggle('cal', !!calMonth);
+    if (calMonth) return renderCalendar();
+
+    const meals = load(dayKey(), []);
+    const isToday = day.toDateString() === new Date().toDateString();
+    const sum = (f, kind) => sumOf(meals, f, kind);
+    const eaten = sum('calories'), burned = sum('calories', 'exercise');
+
+    $('day').textContent = isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
+    $('next').disabled = isToday;
+    $('kcal').textContent = `${r(eaten - burned)} kcal`;
+    $('macros').textContent = `Eaten ${r(eaten)} − Exercise ${r(burned)}\n` +
+      `P ${r(sum('protein'))}g · C ${r(sum('carbs'))}g · F ${r(sum('fat'))}g`;
+
+    const meal = meals.find(m => m.id === openId);
+    if (!meal) openId = null;
+    $('meals').hidden = !!meal;
+    $('thread').hidden = !meal;
+    $('text').placeholder = meal ? 'Correct this entry…' : 'What did you eat or do?';
+
+    if (meal) {
+      const back = el('button', '‹ All entries', { id: 'back', type: 'button', onclick: () => { openId = null; render(); } });
+      $('thread').replaceChildren(back, card(meal),
+        ...meal.thread.map(t => el('div', t.role === 'user' ? (t.photo ? '📷 ' : '') + t.text : JSON.parse(t.text).reply, { className: 'msg ' + t.role })));
+    } else {
+      $('meals').replaceChildren(...(meals.length ? meals.map(card) : [el('p', 'Nothing logged yet.', { className: 'empty' })]));
+    }
+  }
+
+  function card(m) {
+    const c = el('div', '', { className: 'card', onclick: () => { openId = m.id; render(); } });
+    const isExercise = m.kind === 'exercise';
+    const info = el('div', (isExercise ? '🏃 ' : '') + m.name);
+    info.append(el('small', isExercise ? `${m.calories} kcal burned`
+      : `${m.calories} kcal · P ${r(m.protein)}g · C ${r(m.carbs)}g · F ${r(m.fat)}g`));
+    const del = el('button', '×', { className: 'x', type: 'button', ariaLabel: 'Delete meal', onclick: e => {
+      e.stopPropagation();
+      save(dayKey(), load(dayKey(), []).filter(x => x.id !== m.id));
+      render();
+    } });
+    c.append(info, del);
+    return c;
+  }
+
+  function el(tag, text, props = {}) {
+    const e = Object.assign(document.createElement(tag), props);
+    e.textContent = text;
+    return e;
+  }
+
+  function status(msg, isErr = false) {
+    $('status').textContent = msg;
+    $('status').className = isErr ? 'err' : '';
+  }
+
+  // Shrink to <=1568px on the long edge and re-encode as JPEG (keeps requests small and under the API image limit).
+  async function toJpeg(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      const scale = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = Object.assign(document.createElement('canvas'), { width: r(img.naturalWidth * scale), height: r(img.naturalHeight * scale) });
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function ask(thread, image) {
+    const client = new Anthropic({ apiKey: load('apiKey', ''), dangerouslyAllowBrowser: true });
+    // Past photos weren't kept; Claude's earlier reply already describes what it saw.
+    const messages = thread.map(t => ({ role: t.role, content: t.photo ? '[photo analyzed earlier] ' + t.text : t.text }));
+    if (image) {
+      const last = messages.at(-1);
+      last.content = [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+                      { type: 'text', text: thread.at(-1).text || 'Estimate this meal.' }];
+    }
+    const res = await client.beta.messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      system: system(),
+      messages,
+      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+    });
+    if (res.stop_reason === 'refusal') throw new Error('Claude declined to answer this one.');
+    const text = res.content.findLast(b => b.type === 'text')?.text;
+    if (res.stop_reason === 'max_tokens' || !text) throw new Error('Claude’s answer was cut off. Try again.');
+    return text;
+  }
+
+  $('composer').onsubmit = async e => {
+    e.preventDefault();
+    const text = $('text').value.trim();
+    if (!text && !photo) return;
+    if (!load('apiKey', '')) return openSettings();
+
+    const key = dayKey(); // capture now, in case the day changes while waiting
+    const meals = load(key, []);
+    const meal = meals.find(m => m.id === openId);
+    const thread = [...(meal?.thread ?? []), { role: 'user', text, ...(photo && { photo: true }) }];
+
+    $('send').disabled = true;
+    status('Thinking…');
+    try {
+      const raw = await ask(thread, photo);
+      const out = JSON.parse(raw);
+      const updated = { id: meal?.id ?? crypto.randomUUID(), kind: out.kind, name: out.name, calories: out.calories,
+        protein: out.protein_g, carbs: out.carbs_g, fat: out.fat_g, thread: [...thread, { role: 'assistant', text: raw }] };
+      const fresh = load(key, []); // re-read so a delete made while waiting isn't undone
+      save(key, meal ? fresh.map(m => m.id === meal.id ? updated : m) : [...fresh, updated]);
+      openId = updated.id;
+      $('text').value = '';
+      clearPhoto();
+      status('');
+    } catch (err) {
+      // Keep the typed text and photo so nothing is lost.
+      status(err instanceof Anthropic.AuthenticationError ? 'Invalid API key — check settings (⚙︎).'
+        : err instanceof Anthropic.RateLimitError ? 'Rate limited — wait a moment and retry.'
+        : err instanceof Anthropic.APIConnectionError ? 'No connection — check your internet.'
+        : err.message, true);
+    } finally {
+      $('send').disabled = false;
+      render();
+    }
+  };
+
+  $('photo').onchange = async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      photo = await toJpeg(file);
+      $('preview').querySelector('img').src = 'data:image/jpeg;base64,' + photo;
+      $('preview').hidden = false;
+    } catch {
+      status('Couldn’t read that photo.', true);
+    }
+  };
+  const clearPhoto = () => { photo = null; $('preview').hidden = true; };
+  $('unphoto').onclick = clearPhoto;
+
+  $('text').oninput = e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; };
+  $('prev').onclick = () => { calMonth ? calMonth.setMonth(calMonth.getMonth() - 1) : day.setDate(day.getDate() - 1); openId = null; render(); };
+  $('next').onclick = () => { calMonth ? calMonth.setMonth(calMonth.getMonth() + 1) : day.setDate(day.getDate() + 1); openId = null; render(); };
+  $('cal').onclick = () => { calMonth = calMonth ? null : new Date(day.getFullYear(), day.getMonth(), 1); render(); };
+  function openSettings() {
+    $('key').value = load('apiKey', '');
+    $('profile').value = load('profile', DEFAULT_PROFILE);
+    $('settings').showModal();
+  }
+  $('gear').onclick = openSettings;
+  $('settings').onclose = () => {
+    if ($('key').value.trim()) save('apiKey', $('key').value.trim());
+    if ($('profile').value.trim()) save('profile', $('profile').value.trim());
+    render();
+  };
+
+  render();
+  if (!load('apiKey', '')) openSettings();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>

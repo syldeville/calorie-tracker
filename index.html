@@ -13,9 +13,9 @@
 <title>Calories</title>
 <style>
   :root { --bg:#fff; --fg:#111; --muted:#888; --line:#e5e5e5; --card:#f5f5f5; --accent:#2f7d4f; --err:#c0392b;
-          --protein:#8e44ad; --carbs:#e67e22; --fat:#27ae60; }
+          --protein:#8e44ad; --carbs:#e67e22; --fat:#27ae60; --fiber:#2e86de; }
   @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --line:#2a2a2a; --card:#1c1c1c;
-          --protein:#c39bd3; --carbs:#f0a04b; --fat:#52c77f; } }
+          --protein:#c39bd3; --carbs:#f0a04b; --fat:#52c77f; --fiber:#6aa9ec; } }
   * { box-sizing:border-box; }
   html { background:var(--bg); }
   /* Fixed-height column: top bar and composer stay put, only #scroll scrolls. */
@@ -37,7 +37,7 @@
   #macros { color:var(--muted); white-space:pre-line; font-size:15px; }
   .m { font-weight:600; font-size:13px; display:inline-block; padding:2px 9px; margin:4px 2px 0; border-radius:999px;
        background:color-mix(in srgb, currentColor 18%, transparent); }
-  .m.p { color:var(--protein); } .m.c { color:var(--carbs); } .m.f { color:var(--fat); }
+  .m.p { color:var(--protein); } .m.c { color:var(--carbs); } .m.f { color:var(--fat); } .m.fb { color:var(--fiber); }
   .card { display:flex; align-items:center; gap:8px; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
   .card div { flex:1; min-width:0; }
   .card small { color:var(--muted); display:block; margin-top:2px; }
@@ -132,6 +132,7 @@
   const system = () => 'You are a nutrition and exercise estimator for a personal log. The user either logs a meal (text and/or photo) ' +
     'or an exercise they did. Set `kind` accordingly.\n' +
     'Meal: list each food as an item with its estimated portion, calories and macros.\n' +
+    '`fiber_g` is dietary fibre, which is part of `carbs_g` rather than additional to it.\n' +
     'Exercise: list each activity as an item; `calories` is active calories burned (above resting), macros are 0. ' +
     'Base the estimate on the user profile below.\n' +
     'An entry can span several messages. `items` must ALWAYS be the complete list for the whole entry so far: ' +
@@ -156,8 +157,9 @@
             protein_g: { type: 'number' },
             carbs_g: { type: 'number' },
             fat_g: { type: 'number' },
+            fiber_g: { type: 'number' },
           },
-          required: ['name', 'calories', 'protein_g', 'carbs_g', 'fat_g'],
+          required: ['name', 'calories', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g'],
           additionalProperties: false,
         },
       },
@@ -172,7 +174,7 @@
   const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
   const dayKey = (d = day) => 'day:' + d.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
   const r = n => Math.round(n);
-  const sumOf = (entries, f, kind = 'meal') => entries.filter(m => (m.kind ?? 'meal') === kind).reduce((s, m) => s + m[f], 0);
+  const sumOf = (entries, f, kind = 'meal') => entries.filter(m => (m.kind ?? 'meal') === kind).reduce((s, m) => s + (m[f] ?? 0), 0);
   const netOf = entries => sumOf(entries, 'calories') - sumOf(entries, 'calories', 'exercise');
 
   let day = new Date();
@@ -210,7 +212,7 @@
     $('day').textContent = isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
     $('next').disabled = isToday;
     $('kcal').textContent = `${r(eaten - burned)} kcal`;
-    $('macros').replaceChildren(`Eaten ${r(eaten)} − Exercise ${r(burned)}\n`, ...macroSpans(sum('protein'), sum('carbs'), sum('fat')));
+    $('macros').replaceChildren(`Eaten ${r(eaten)} − Exercise ${r(burned)}\n`, ...macroSpans(sum('protein'), sum('carbs'), sum('fat'), sum('fiber')));
 
     const meal = meals.find(m => m.id === openId);
     if (!meal) openId = null;
@@ -229,16 +231,17 @@
   // Claude's reply plus the item breakdown the entry's totals are summed from (older replies have no items).
   const replyText = out => [out.reply, ...(out.items ?? []).map(i => `• ${i.name}: ${i.calories} kcal`)].join('\n');
 
-  // Protein purple, carbs orange, fat green.
-  const macroSpans = (p, c, f) => [el('span', `Protein ${r(p)}g`, { className: 'm p' }),
-    el('span', `Carbs ${r(c)}g`, { className: 'm c' }), el('span', `Fat ${r(f)}g`, { className: 'm f' })];
+  // Protein purple, carbs orange, fat green, fibre blue. Entries logged before fibre existed have none.
+  const macroSpans = (p, c, f, fb) => [el('span', `Protein ${r(p)}g`, { className: 'm p' }),
+    el('span', `Carbs ${r(c)}g`, { className: 'm c' }), el('span', `Fat ${r(f)}g`, { className: 'm f' }),
+    el('span', `Fibre ${r(fb ?? 0)}g`, { className: 'm fb' })];
 
   function card(m) {
     const c = el('div', '', { className: 'card', onclick: () => { openId = m.id; chat = true; render(); } });
     const isExercise = m.kind === 'exercise';
     const info = el('div', (isExercise ? '🏃 ' : '') + m.name);
     const detail = el('small', isExercise ? `${m.calories} kcal burned` : `${m.calories} kcal `);
-    if (!isExercise) detail.append(...macroSpans(m.protein, m.carbs, m.fat));
+    if (!isExercise) detail.append(...macroSpans(m.protein, m.carbs, m.fat, m.fiber));
     info.append(detail);
     const del = el('button', '×', { className: 'x', type: 'button', ariaLabel: 'Delete meal', onclick: e => {
       e.stopPropagation();
@@ -317,20 +320,28 @@
     if (!meal) $('msgs').replaceChildren(); // drop the empty-chat hint
     $('msgs').append(el('div', (photo ? '📷 ' : '') + text, { className: 'msg user' }));
     $('msgs').scrollTop = $('msgs').scrollHeight;
+    const sent = photo; // the composer is cleared now, so hold the photo for the request
+    $('text').value = '';
+    $('text').style.height = 'auto';
+    clearPhoto();
     try {
-      const raw = await ask(thread, photo);
+      const raw = await ask(thread, sent);
       const out = JSON.parse(raw);
       const total = f => out.items.reduce((s, i) => s + i[f], 0);
       const updated = { id: meal?.id ?? crypto.randomUUID(), kind: out.kind, name: out.name, calories: total('calories'),
-        protein: total('protein_g'), carbs: total('carbs_g'), fat: total('fat_g'), thread: [...thread, { role: 'assistant', text: raw }] };
+        protein: total('protein_g'), carbs: total('carbs_g'), fat: total('fat_g'), fiber: total('fiber_g'), thread: [...thread, { role: 'assistant', text: raw }] };
       const fresh = load(key, []); // re-read so a delete made while waiting isn't undone
       save(key, meal ? fresh.map(m => m.id === meal.id ? updated : m) : [...fresh, updated]);
       openId = updated.id;
-      $('text').value = '';
-      clearPhoto();
       status('');
     } catch (err) {
-      // Keep the typed text and photo so nothing is lost.
+      // Put the text and photo back so nothing is lost.
+      $('text').value = text;
+      photo = sent;
+      if (photo) {
+        $('preview').querySelector('img').src = 'data:image/jpeg;base64,' + photo;
+        $('preview').hidden = false;
+      }
       status(err instanceof Anthropic.AuthenticationError ? 'Invalid API key — check settings (⚙︎).'
         : err instanceof Anthropic.RateLimitError ? 'Rate limited — wait a moment and retry.'
         : err instanceof Anthropic.APIConnectionError ? 'No connection — check your internet.'

@@ -183,13 +183,14 @@
 
   const DEFAULT_TDEE = r(1351 * 1.2); // BMR × sedentary multiplier
   const wd = d => (d.getDay() + 6) % 7; // weekday with Monday = 0
-  // Calories burned minus eaten over logged days (≤ today) of the Mon–Sun week containing d. Unlogged days are skipped.
+  const midnight = () => new Date(new Date().setHours(0, 0, 0, 0)); // start of today
+  // Calories burned minus eaten over finished logged days (before today) of the Mon–Sun week containing d. Unlogged days are skipped.
   function weekDeficit(d) {
-    const tdee = load('tdee', DEFAULT_TDEE), now = new Date();
+    const tdee = load('tdee', DEFAULT_TDEE), today = midnight();
     let total = 0;
     for (let i = 0; i < 7; i++) {
       const w = new Date(d.getFullYear(), d.getMonth(), d.getDate() - wd(d) + i), entries = load(dayKey(w), []);
-      if (w <= now && entries.length) total += tdee - netOf(entries);
+      if (w < today && entries.length) total += tdee - netOf(entries);
     }
     return total;
   }
@@ -218,7 +219,7 @@
         for (let i = wd(d); i < 6; i++) cells.push(el('span', ''));
         const def = weekDeficit(d), wk = el('div', r(def).toLocaleString(), { className: 'wk' });
         wk.append(el('small', `${(def / 3500).toFixed(1)} lb`)); // ~3500 kcal per lb of fat
-        cells.push(new Date(y, mo, n - wd(d)) > now ? el('span', '') : wk); // no total for weeks not started yet
+        cells.push(new Date(y, mo, n - wd(d)) >= midnight() ? el('span', '') : wk); // no total until a day of the week has passed
       }
     }
     $('calendar').replaceChildren(...cells);

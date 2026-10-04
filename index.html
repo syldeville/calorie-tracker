@@ -57,7 +57,7 @@
   .cam { color:var(--muted); height:44px; width:44px; display:grid; place-items:center; cursor:pointer; }
   #send { background:var(--accent); color:#fff; border-radius:50%; height:44px; width:44px; display:grid; place-items:center; flex-shrink:0; }
   .icon { width:22px; height:22px; display:block; }
-  header #cal { display:grid; place-items:center; }
+  header #cal, header #health { display:grid; place-items:center; }
   #send:disabled { opacity:.5; }
   #preview { max-width:520px; margin:0 auto 8px; display:flex; align-items:center; gap:8px; }
   #preview img { height:56px; border-radius:8px; }
@@ -87,6 +87,7 @@
   <button id="next" aria-label="Next day">›</button>
   <!-- Icons: Lucide (lucide.dev), ISC license -->
   <button id="cal" aria-label="Calendar"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg></button>
+  <button id="health" aria-label="Sync to Apple Health"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/></svg></button>
   <button id="gear" aria-label="Settings">⚙︎</button>
 </header>
 
@@ -400,6 +401,19 @@
   $('prev').onclick = () => { calMonth ? calMonth.setMonth(calMonth.getMonth() - 1) : day.setDate(day.getDate() - 1); openId = null; render(); };
   $('next').onclick = () => { calMonth ? calMonth.setMonth(calMonth.getMonth() + 1) : day.setDate(day.getDate() + 1); openId = null; render(); };
   $('cal').onclick = () => { calMonth = calMonth ? null : new Date(day.getFullYear(), day.getMonth(), 1); render(); };
+  // Sends every meal not sent before to the "Calorie Tracker to Health" shortcut, which logs it in Apple Health.
+  // ponytail: marked as sent on tap since a home-screen app can't get a reliable callback; later corrections/deletes aren't resent.
+  $('health').onclick = () => {
+    const sent = new Set(load('healthSynced', []));
+    const meals = Object.keys(localStorage).filter(k => k.startsWith('day:')).sort().flatMap(k =>
+      load(k, []).filter(m => (m.kind ?? 'meal') === 'meal' && !sent.has(m.id)).map(m => ({ ...m, date: k.slice(4) + ' 12:00' })));
+    if (!meals.length) return status('Nothing new to send to Health.');
+    const payload = meals.map(m => ({ date: m.date, calories: r(m.calories), protein: r(m.protein), carbs: r(m.carbs), fat: r(m.fat), fiber: r(m.fiber ?? 0) }));
+    save('healthSynced', [...sent, ...meals.map(m => m.id)]);
+    location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent('Calorie Tracker to Health') +
+      '&input=text&text=' + encodeURIComponent(JSON.stringify({ meals: payload }));
+  };
+
   function openSettings() {
     $('key').value = load('apiKey', '');
     $('profile').value = load('profile', DEFAULT_PROFILE);

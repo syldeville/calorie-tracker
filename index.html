@@ -12,80 +12,121 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Calories</title>
 <style>
-  :root { --bg:#fff; --fg:#111; --muted:#888; --line:#e5e5e5; --card:#f5f5f5; --accent:#2f7d4f; --err:#c0392b;
-          --protein:#8e44ad; --carbs:#e67e22; --fat:#27ae60; --fiber:#2e86de; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --line:#2a2a2a; --card:#1c1c1c;
+  /* Warm neutral base, white cards, green accent. Sizes: 13 / 15 / 17 / 44. */
+  :root { --bg:#f4f4f1; --fg:#161816; --muted:#7c807b; --line:#e4e5e0; --card:#fff; --sunk:#ecede9;
+          --accent:#2f7d4f; --err:#c0392b; --shadow:0 1px 2px rgba(40,50,40,.04), 0 6px 20px rgba(40,50,40,.06);
+          --protein:#8e44ad; --carbs:#d9711b; --fat:#27ae60; --fiber:#2e86de; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e0f0e; --fg:#eef0ed; --muted:#8d918c; --line:#262826; --card:#1a1b1a; --sunk:#141514;
+          --accent:#4cae74; --err:#e5675a; --shadow:none;
           --protein:#c39bd3; --carbs:#f0a04b; --fat:#52c77f; --fiber:#6aa9ec; } }
   * { box-sizing:border-box; }
   html { background:var(--bg); }
   /* Fixed-height column: top bar and composer stay put, only #scroll scrolls. */
   body { margin:0 auto; max-width:520px; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
-         background:var(--bg); color:var(--fg); font:17px -apple-system, system-ui, sans-serif; }
-  #home { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; padding-top:max(12px, env(safe-area-inset-top)); }
+         background:var(--bg); color:var(--fg); font:17px -apple-system, system-ui, sans-serif; font-variant-numeric:tabular-nums;
+         -webkit-tap-highlight-color:transparent; }
+  #home { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; padding-top:max(8px, env(safe-area-inset-top)); }
   /* Chat overlay: blurs and dims the home view; the composer sits outside #home so it stays sharp. */
-  #thread { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; padding:max(12px, env(safe-area-inset-top)) 16px 0;
+  #thread { position:absolute; inset:0; z-index:1; display:flex; flex-direction:column; padding:max(8px, env(safe-area-inset-top)) 16px 0;
             background:rgba(0,0,0,.55); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
   #msgs { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
-  header, .totals { padding:0 16px; flex-shrink:0; }
-  #scroll { flex:1; min-height:0; overflow-y:auto; padding:0 16px 12px; overscroll-behavior:contain; }
+  header { padding:0 8px; flex-shrink:0; }
+  #scroll { flex:1; min-height:0; overflow-y:auto; padding:0 16px 16px; overscroll-behavior:contain; }
   button { font:inherit; border:0; background:none; color:var(--fg); cursor:pointer; }
-  header { display:flex; align-items:center; gap:4px; }
-  header button { font-size:22px; width:44px; height:44px; }
-  header h1 { flex:1; text-align:center; font-size:18px; margin:0; }
-  .totals { text-align:center; margin:16px 0 20px; }
-  .totals b { font-size:44px; display:block; }
-  #macros { color:var(--muted); white-space:pre-line; font-size:15px; }
-  .m { font-weight:600; font-size:13px; display:inline-block; padding:2px 9px; margin:4px 2px 0; border-radius:999px;
-       background:color-mix(in srgb, currentColor 18%, transparent); }
+  button:active { opacity:.6; }
+  header { display:flex; align-items:center; }
+  header button { font-size:24px; width:44px; height:44px; display:grid; place-items:center; color:var(--fg); }
+  header button:disabled { opacity:.25; }
+  header h1 { font-size:17px; font-weight:600; margin:0; white-space:nowrap; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  header #cal { margin-left:auto; } /* date navigation on the left, tools on the right */
+
+  /* Today's summary */
+  .totals { flex-shrink:0; margin:8px 16px 16px; padding:20px 24px; background:var(--card); border-radius:24px; box-shadow:var(--shadow); }
+  .hero { display:flex; align-items:baseline; justify-content:center; gap:8px; }
+  .hero b { font-size:44px; font-weight:700; letter-spacing:-.02em; line-height:1; }
+  .hero span, #sub { color:var(--muted); font-size:15px; }
+  .bar { height:8px; border-radius:4px; background:var(--sunk); margin:16px 0 8px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; border-radius:4px; background:var(--accent); transition:width .4s ease; }
+  .bar i.over { background:var(--err); }
+  #sub { margin:0; text-align:center; }
+  /* Macros: value first. Inline on entries, four columns in the summary. */
+  .m { font-size:13px; display:inline-block; margin:4px 12px 0 0; }
+  .m b { font-weight:600; }
   .m.p { color:var(--protein); } .m.c { color:var(--carbs); } .m.f { color:var(--fat); } .m.fb { color:var(--fiber); }
-  .card { display:flex; align-items:center; gap:8px; background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
-  .card div { flex:1; min-width:0; }
-  .card small { color:var(--muted); display:block; margin-top:2px; }
-  .card .x { color:var(--muted); font-size:22px; width:36px; height:36px; }
-  .empty { color:var(--muted); text-align:center; }
-  .msg { padding:10px 14px; border-radius:16px; margin:8px 0; max-width:85%; white-space:pre-wrap; }
-  .msg.user { background:var(--accent); color:#fff; margin-left:auto; }
-  .msg.assistant { background:var(--card); }
-  #back { align-self:flex-start; font-size:22px; width:44px; height:44px; color:#fff; }
-  #status { color:var(--muted); text-align:center; min-height:1.4em; }
-  #status.err { color:var(--err); }
-  form#composer { flex-shrink:0; background:var(--bg); border-top:1px solid var(--line);
-                  padding:10px 16px max(10px, env(safe-area-inset-bottom)); }
-  .row { display:flex; gap:8px; align-items:flex-end; max-width:520px; margin:0 auto; }
-  textarea { flex:1; font:inherit; resize:none; padding:10px 12px; border:1px solid var(--line); border-radius:18px;
-             background:var(--bg); color:var(--fg); max-height:120px; }
-  .cam { color:var(--muted); height:44px; width:44px; display:grid; place-items:center; cursor:pointer; }
-  #send { background:var(--accent); color:#fff; border-radius:50%; height:44px; width:44px; display:grid; place-items:center; flex-shrink:0; }
-  .icon { width:22px; height:22px; display:block; }
-  header #cal, header #health { display:grid; place-items:center; }
+  #macros { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin-top:16px; }
+  #macros .m { margin:0; padding:8px 0; text-align:center; border-radius:12px; background:color-mix(in srgb, currentColor 10%, transparent); }
+  #macros .m b { display:block; font-size:17px; }
+
+  /* Entries */
+  .card { display:flex; align-items:flex-start; gap:8px; background:var(--card); border-radius:20px; padding:16px 8px 16px 16px;
+          margin-bottom:12px; box-shadow:var(--shadow); cursor:pointer; }
+  .card .info { flex:1; min-width:0; }
+  .card .top { display:flex; align-items:baseline; gap:12px; }
+  .card .name { flex:1; min-width:0; }
+  .card .kc { font-size:17px; font-weight:600; white-space:nowrap; }
+  .card .kc small { font-size:13px; font-weight:400; color:var(--muted); margin-left:2px; }
+  .card.ex .kc { color:var(--accent); }
+  .card > .info > small { display:block; color:var(--muted); font-size:13px; margin-top:4px; }
+  .card .x { color:var(--muted); font-size:20px; width:32px; height:32px; margin-top:-6px; flex-shrink:0; }
+  .empty { color:var(--muted); text-align:center; margin-top:32px; }
+
+  /* Chat */
+  .msg { padding:12px 16px; border-radius:20px; margin:8px 0; max-width:85%; white-space:pre-wrap; }
+  .msg.user { background:var(--accent); color:#fff; margin-left:auto; border-bottom-right-radius:8px; }
+  .msg.assistant { background:var(--card); border-bottom-left-radius:8px; }
+  #msgs .card { box-shadow:none; }
+  #back { align-self:flex-start; font-size:24px; width:44px; height:44px; color:#fff; }
+  #status { color:#ddd; text-align:center; min-height:1.4em; font-size:15px; }
+  #status.err { color:#ff9b8f; }
+
+  /* Composer */
+  form#composer { flex-shrink:0; background:var(--bg); padding:8px 16px max(8px, env(safe-area-inset-bottom)); }
+  .row { display:flex; gap:8px; align-items:flex-end; max-width:520px; margin:0 auto; padding:4px; background:var(--card);
+         border-radius:26px; box-shadow:var(--shadow); }
+  textarea { flex:1; font:inherit; resize:none; padding:10px 4px; border:0; outline:0; background:transparent; color:var(--fg); max-height:120px; }
+  .cam { color:var(--muted); height:44px; width:44px; display:grid; place-items:center; cursor:pointer; flex-shrink:0; }
+  #send { background:var(--accent); color:#fff; border-radius:50%; height:44px; width:44px; display:grid; place-items:center; flex-shrink:0;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.2); }
   #send:disabled { opacity:.5; }
+  .icon { width:22px; height:22px; display:block; }
   #preview { max-width:520px; margin:0 auto 8px; display:flex; align-items:center; gap:8px; }
-  #preview img { height:56px; border-radius:8px; }
-  dialog { border:0; border-radius:14px; background:var(--card); color:var(--fg); width:min(90vw, 400px); }
-  dialog input, dialog textarea { display:block; width:100%; font:inherit; padding:10px; margin:10px 0; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--fg); }
+  #preview img { height:56px; border-radius:12px; }
+
+  /* Settings */
+  dialog { border:0; border-radius:24px; background:var(--card); color:var(--fg); width:min(90vw, 400px); padding:24px; }
+  dialog b { display:block; font-size:13px; font-weight:600; color:var(--muted); margin-top:16px; }
+  dialog b:first-child { margin-top:0; }
+  dialog input, dialog textarea { display:block; width:100%; font:inherit; padding:12px; margin:8px 0 0; border:1px solid var(--line);
+                                  border-radius:12px; background:var(--bg); color:var(--fg); }
   dialog::backdrop { background:rgba(0,0,0,.55); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); }
-  #settings .close { position:absolute; top:6px; right:6px; width:36px; height:36px; font-size:22px; color:var(--muted); }
-  #save { display:block; margin-left:auto; background:#0a84ff; color:#fff; border-radius:10px; padding:8px 18px; font-weight:600; }
+  #settings .close { position:absolute; top:12px; right:12px; width:36px; height:36px; font-size:22px; color:var(--muted); }
+  #save { display:block; margin:24px 0 0 auto; background:var(--accent); color:#fff; border-radius:12px; padding:12px 24px; font-weight:600;
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.2); }
+
+  /* Calendar */
   /* The scroll handler keeps the view still when older months load above, so stop Chrome doing it too. */
   .cal #scroll { overflow-anchor:none; }
   #calendar { padding-bottom:60vh; } /* room for the current month to scroll up to the top */
   #calendar .grid { display:grid; grid-template-columns:repeat(7, 1fr) 1.2fr; gap:4px; text-align:center; }
-  #calendar .wkdays { position:sticky; top:0; z-index:1; background:var(--bg); padding:8px 0 4px; }
-  #calendar b { font-size:13px; color:var(--muted); }
+  #calendar .wkdays { position:sticky; top:0; z-index:1; background:var(--bg); padding:8px 0; }
+  #calendar b { font-size:13px; font-weight:600; color:var(--muted); }
   #calendar .week { margin-bottom:4px; }
   #calendar .mo { display:block; font-size:10px; font-weight:700; text-transform:uppercase; color:var(--accent); }
   /* Days outside the month being viewed fade. */
   #calendar .week > * { transition:opacity .2s; }
   #calendar .out { opacity:.3; }
-  #calendar button { background:var(--card); border-radius:10px; min-height:52px; font-size:15px; padding:4px 0; }
-  #calendar button small { display:block; font-size:11px; color:var(--accent); }
-  #calendar button.today { outline:2px solid var(--accent); }
-  #calendar button:disabled { opacity:.35; }
-  #calendar .wk { display:grid; place-content:center; font-size:12px; font-weight:600; }
+  #calendar button { background:var(--card); border-radius:12px; min-height:52px; font-size:15px; padding:4px 0; }
+  #calendar button small { display:block; font-size:11px; color:var(--muted); }
+  #calendar button.today { box-shadow:inset 0 0 0 2px var(--accent); }
+  #calendar button:disabled { background:transparent; opacity:.4; }
+  #calendar button:disabled.out { opacity:.2; }
+  #calendar .wk { display:grid; place-content:center; font-size:13px; font-weight:600; color:var(--accent); }
+  #calendar .wk.surplus { color:var(--err); }
   #calendar .wk small { font-size:11px; font-weight:400; color:var(--muted); }
   .cal .totals, .cal #meals, .cal #thread, .cal #composer, .cal #status { display:none !important; }
   body:not(.cal) #calendar { display:none; }
   [hidden] { display:none !important; }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
 <body>
@@ -100,7 +141,12 @@
   <button id="gear" aria-label="Settings">⚙︎</button>
 </header>
 
-<div class="totals"><b id="kcal">0</b><span id="macros"></span></div>
+<div class="totals">
+  <div class="hero"><b id="kcal">0</b><span>kcal net</span></div>
+  <div class="bar"><i id="bar"></i></div>
+  <p id="sub"></p>
+  <div id="macros"></div>
+</div>
 
 <div id="scroll">
   <main id="calendar"></main>
@@ -245,8 +291,8 @@
       btn.month = monthOf(d);
       row.append(btn);
     }
-    const def = weekDeficit(mon), wk = el('div', r(def).toLocaleString(), { className: 'wk' });
-    wk.append(el('small', `${(def / 3500).toFixed(1)} lb`)); // ~3500 kcal per lb of fat
+    const def = weekDeficit(mon), wk = el('div', r(def).toLocaleString(), { className: 'wk' + (def < 0 ? ' surplus' : '') });
+    wk.append(el('small', `${(Math.round(def / 350) / 10).toFixed(1)} lb`)); // ~3500 kcal per lb of fat; rounding first avoids "-0.0"
     row.append(mon >= midnight() ? el('span', '') : wk); // no total until a day of the week has passed
     row.mon = mon;
     return row;
@@ -303,8 +349,17 @@
 
     $('day').textContent = isToday ? 'Today' : day.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
     $('next').disabled = isToday;
-    $('kcal').textContent = `${r(eaten - burned)} kcal`;
-    $('macros').replaceChildren(`Eaten ${r(eaten)} − Exercise ${r(burned)}\n`, ...macroSpans(sum('protein'), sum('carbs'), sum('fat'), sum('fiber')));
+    const net = eaten - burned, tdee = load('tdee', DEFAULT_TDEE), left = r(tdee - net), shown = r(net).toLocaleString();
+    // A small pop when today's total changes, so a logged entry visibly lands.
+    if ($('kcal').textContent !== shown && $('kcal').dataset.day === dayKey() && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+      $('kcal').animate([{ transform: 'scale(1.1)' }, { transform: 'none' }], { duration: 350, easing: 'cubic-bezier(.3,1.6,.6,1)' });
+    $('kcal').textContent = shown;
+    $('kcal').dataset.day = dayKey();
+    $('bar').style.width = Math.min(100, Math.max(0, net / tdee * 100)) + '%';
+    $('bar').classList.toggle('over', left < 0);
+    $('sub').textContent = `Eaten ${r(eaten).toLocaleString()} · Exercise ${r(burned)} · ` +
+      (left >= 0 ? `${left.toLocaleString()} under TDEE` : `${(-left).toLocaleString()} over TDEE`);
+    $('macros').replaceChildren(...macroSpans(sum('protein'), sum('carbs'), sum('fat'), sum('fiber')));
 
     const meal = meals.find(m => m.id === openId);
     if (!meal) openId = null;
@@ -324,17 +379,23 @@
   const replyText = out => [out.reply, ...(out.items ?? []).map(i => `• ${i.name}: ${i.calories} kcal`)].join('\n');
 
   // Protein purple, carbs orange, fat green, fibre blue. Entries logged before fibre existed have none.
-  const macroSpans = (p, c, f, fb) => [el('span', `Protein ${r(p)}g`, { className: 'm p' }),
-    el('span', `Carbs ${r(c)}g`, { className: 'm c' }), el('span', `Fat ${r(f)}g`, { className: 'm f' }),
-    el('span', `Fibre ${r(fb ?? 0)}g`, { className: 'm fb' })];
+  const macroSpans = (p, c, f, fb) => [['Protein', p, 'p'], ['Carbs', c, 'c'], ['Fat', f, 'f'], ['Fibre', fb ?? 0, 'fb']].map(([name, g, cls]) => {
+    const s = el('span', ' ' + name, { className: 'm ' + cls });
+    s.prepend(el('b', `${r(g)}g`));
+    return s;
+  });
 
   function card(m) {
-    const c = el('div', '', { className: 'card', onclick: () => { openId = m.id; chat = true; render(); } });
     const isExercise = m.kind === 'exercise';
-    const info = el('div', (isExercise ? '🏃 ' : '') + m.name);
-    const detail = el('small', isExercise ? `${m.calories} kcal burned` : `${m.calories} kcal `);
-    if (!isExercise) detail.append(...macroSpans(m.protein, m.carbs, m.fat, m.fiber));
-    info.append(detail);
+    const c = el('div', '', { className: 'card' + (isExercise ? ' ex' : ''), onclick: () => { openId = m.id; chat = true; render(); } });
+    const info = el('div', '', { className: 'info' }), top = el('div', '', { className: 'top' });
+    const kc = el('b', (isExercise ? '−' : '') + r(m.calories).toLocaleString(), { className: 'kc' });
+    kc.append(el('small', 'kcal'));
+    top.append(el('span', (isExercise ? '🏃 ' : '') + m.name, { className: 'name' }), kc);
+    info.append(top);
+    const extra = el(isExercise ? 'small' : 'div', isExercise ? 'Burned' : '');
+    if (!isExercise) extra.append(...macroSpans(m.protein, m.carbs, m.fat, m.fiber));
+    info.append(extra);
     const del = el('button', '×', { className: 'x', type: 'button', ariaLabel: 'Delete meal', onclick: e => {
       e.stopPropagation();
       save(dayKey(), load(dayKey(), []).filter(x => x.id !== m.id));

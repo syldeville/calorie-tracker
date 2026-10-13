@@ -21,6 +21,12 @@
           --protein:#c39bd3; --carbs:#f0a04b; --fat:#52c77f; --fiber:#6aa9ec; } }
   * { box-sizing:border-box; }
   html { background:var(--bg); }
+  /* iOS 26 home-screen apps: viewport heights come up short by the top safe area, leaving a gap at the bottom;
+     only lvh reports the full screen. */
+  @media (display-mode: standalone) { body { height:100lvh !important; } }
+  /* iOS 26 lays a Liquid Glass blur over the status bar that bleeds into the header, unless an opaque fixed box
+     covers the top edge; WebKit then uses that box's colour instead. */
+  body::before { content:''; position:fixed; top:0; left:0; right:0; height:env(safe-area-inset-top); background:var(--bg); z-index:2; }
   /* Fixed-height column: top bar and composer stay put, only #scroll scrolls. */
   body { margin:0 auto; max-width:520px; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
          background:var(--bg); color:var(--fg); font:17px -apple-system, system-ui, sans-serif; font-variant-numeric:tabular-nums;
@@ -574,7 +580,12 @@
   };
 
   // iOS doesn't shrink the page for the keyboard; size the body to the visible area so the composer sits above it.
-  const fit = () => { document.body.style.height = visualViewport.height + 'px'; scrollTo(0, 0); };
+  // Pin the layout to the visible area only while the keyboard is up; otherwise CSS sizes it (see the iOS 26 note).
+  const fit = () => {
+    const keyboard = visualViewport.height < innerHeight - 100;
+    document.body.style.setProperty('height', keyboard ? visualViewport.height + 'px' : '', keyboard ? 'important' : '');
+    scrollTo(0, 0);
+  };
   visualViewport.addEventListener('resize', fit);
   fit();
 

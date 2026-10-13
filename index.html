@@ -28,7 +28,8 @@
      covers the top edge; WebKit then uses that box's colour instead. */
   body::before { content:''; position:fixed; top:0; left:0; right:0; height:env(safe-area-inset-top); background:var(--bg); z-index:2; }
   /* Fixed-height column: top bar and composer stay put, only #scroll scrolls. */
-  body { margin:0 auto; max-width:520px; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
+  /* Fixed so the page itself never scrolls; fit() moves it to follow the keyboard. */
+  body { position:fixed; top:0; left:0; right:0; margin:0 auto; max-width:520px; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
          background:var(--bg); color:var(--fg); font:17px -apple-system, system-ui, sans-serif; font-variant-numeric:tabular-nums;
          -webkit-tap-highlight-color:transparent; }
   #home { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; padding-top:max(8px, env(safe-area-inset-top)); }
@@ -583,15 +584,17 @@
   };
 
   // iOS doesn't shrink the page for the keyboard; size the body to the visible area so the composer sits above it.
-  // Pin the layout to the visible area only while the keyboard is up; otherwise CSS sizes it (see the iOS 26 note).
+  // While the keyboard is up, size the layout to the visible area and follow it: iOS pans the visible area down to
+  // reveal the focused field, so move the (fixed) body by the same offset. Otherwise CSS sizes it (see the iOS 26 note).
   // innerHeight shrinks with the keyboard on iOS, so compare against the screen instead.
   const fit = () => {
-    const keyboard = visualViewport.height < screen.height * .75;
+    const vv = visualViewport, keyboard = vv.height < screen.height * .75, b = document.body.style;
     document.body.classList.toggle('kb', keyboard);
-    document.body.style.setProperty('height', keyboard ? visualViewport.height + 'px' : '', keyboard ? 'important' : '');
-    scrollTo(0, 0);
+    b.setProperty('height', keyboard ? vv.height + 'px' : '', keyboard ? 'important' : '');
+    b.transform = keyboard && vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
   };
   visualViewport.addEventListener('resize', fit);
+  visualViewport.addEventListener('scroll', fit);
   fit();
 
   render();

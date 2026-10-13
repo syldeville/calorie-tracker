@@ -28,8 +28,7 @@
      covers the top edge; WebKit then uses that box's colour instead. */
   body::before { content:''; position:fixed; top:0; left:0; right:0; height:env(safe-area-inset-top); background:var(--bg); z-index:2; }
   /* Fixed-height column: top bar and composer stay put, only #scroll scrolls. */
-  /* Fixed so the page itself never scrolls; fit() moves it to follow the keyboard. */
-  body { position:fixed; top:0; left:0; right:0; margin:0 auto; max-width:520px; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
+  body { margin:0 auto; max-width:520px; height:100dvh; display:flex; flex-direction:column; overflow:hidden;
          background:var(--bg); color:var(--fg); font:17px -apple-system, system-ui, sans-serif; font-variant-numeric:tabular-nums;
          -webkit-tap-highlight-color:transparent; }
   #home { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; padding-top:max(8px, env(safe-area-inset-top)); }
@@ -89,6 +88,9 @@
   /* Composer */
   form#composer { flex-shrink:0; background:var(--bg); padding:8px 16px max(8px, env(safe-area-inset-bottom)); }
   .kb form#composer { padding-bottom:8px; } /* the keyboard covers the home indicator */
+  /* While typing, pin the page so it can't scroll; fit() moves it to follow the keyboard. Only then: on iOS 26 a
+     fixed page is cut short by the top safe area when the keyboard is down. */
+  body.kb { position:fixed; top:0; left:0; right:0; }
   .row { display:flex; gap:8px; align-items:flex-end; max-width:520px; margin:0 auto; padding:4px; background:var(--card);
          border-radius:26px; box-shadow:var(--shadow); }
   textarea { flex:1; font:inherit; resize:none; padding:10px 4px; border:0; outline:0; background:transparent; color:var(--fg); max-height:120px; }

@@ -116,9 +116,11 @@
   /* Calendar */
   /* The scroll handler keeps the view still when older months load above, so stop Chrome doing it too. */
   .cal #scroll { overflow-anchor:none; }
-  /* Each month snaps to the centre (below the sticky weekday row), so crossing into the next one has some resistance. */
-  .cal #scroll { scroll-snap-type:y mandatory; scroll-padding-top:40px; }
-  #calendar .snap { scroll-snap-align:center; }
+  /* Each month's midpoint snaps to the centre of the area below the header, so crossing into the next one has some
+     resistance. The snap points are invisible markers placed at each month's midpoint. */
+  .cal #scroll { scroll-snap-type:y mandatory; }
+  #calendar { position:relative; }
+  #calendar .snap { position:absolute; left:0; right:0; height:2px; margin-top:-1px; scroll-snap-align:center; pointer-events:none; }
   #calendar .grid { display:grid; grid-template-columns:repeat(7, 1fr) 1.2fr; gap:4px; text-align:center; }
   #calendar .wkdays { position:sticky; top:0; z-index:1; background:var(--bg); padding:8px 0; }
   #calendar b { font-size:13px; font-weight:600; color:var(--muted); }
@@ -283,6 +285,7 @@
     const head = el('div', '', { className: 'grid wkdays' });
     head.append(...['M', 'T', 'W', 'T', 'F', 'S', 'S', 'Deficit'].map(d => el('b', d)));
     $('calendar').replaceChildren(head, ...weeks);
+    placeSnaps();
     scrollToMonth(calMonth);
     showMonth(calMonth, true);
     highlightMonth();
@@ -299,7 +302,6 @@
       btn.classList.toggle('today', d.toDateString() === now.toDateString());
       if (entries.length) btn.append(el('small', r(netOf(entries))));
       btn.month = monthOf(d);
-      if (d.getDate() === 16) { row.classList.add('snap'); row.snapMonth = btn.month; } // roughly mid-month: the snap point
       row.append(btn);
     }
     const def = weekDeficit(mon), wk = el('div', r(def).toLocaleString(), { className: 'wk' + (def < 0 ? ' surplus' : '') });
@@ -309,11 +311,33 @@
     return row;
   }
 
-  // The centre of the area the months snap into (below the sticky weekday row), in viewport coordinates.
-  const snapCentre = () => { const box = $('scroll').getBoundingClientRect(), pad = 40; return box.top + pad + (box.height - pad) / 2; };
+  // The centre of the area below the header, in viewport coordinates: where a month's midpoint snaps to.
+  const snapCentre = () => { const box = $('scroll').getBoundingClientRect(); return (box.top + box.bottom) / 2; };
   const centreOf = e => { const b = e.getBoundingClientRect(); return (b.top + b.bottom) / 2; };
 
-  // The month being viewed is the one whose snap row is nearest the centre.
+  // Puts a snap marker at the midpoint of every fully loaded month (top of its first row to bottom of its last).
+  function placeSnaps() {
+    const span = new Map(); // month → { top, bottom, first, last } (first/last: its 1st / last day is loaded)
+    for (const w of document.querySelectorAll('.week')) {
+      const top = w.offsetTop, bottom = top + w.offsetHeight;
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(w.mon, i), x = span.get(monthOf(d)) ?? { top, bottom };
+        x.bottom = bottom;
+        if (d.getDate() === 1) x.first = true;
+        if (addDays(d, 1).getDate() === 1) x.last = true;
+        span.set(monthOf(d), x);
+      }
+    }
+    document.querySelectorAll('#calendar .snap').forEach(e => e.remove());
+    for (const [m, x] of span) if (x.first && x.last) {
+      const mark = el('div', '', { className: 'snap' });
+      mark.style.top = (x.top + x.bottom) / 2 + 'px';
+      mark.snapMonth = m;
+      $('calendar').append(mark);
+    }
+  }
+
+  // The month being viewed is the one whose midpoint marker is nearest the centre.
   function highlightMonth() {
     const c = snapCentre();
     let best = null;
@@ -344,6 +368,7 @@
       for (let i = -26; i < 0; i++) older.push(weekEl(addDays(calStart, i * 7)));
       calStart = older[0].mon;
       $('calendar').firstChild.after(...older);
+      placeSnaps();
       sc.scrollTop += sc.scrollHeight - h;
       showMonth(calMonth, true); // style the new rows
     }
@@ -352,6 +377,7 @@
       for (let i = 1; i <= 26; i++) newer.push(weekEl(addDays(calEnd, i * 7)));
       calEnd = newer.at(-1).mon;
       $('calendar').append(...newer);
+      placeSnaps();
       showMonth(calMonth, true);
     }
     highlightMonth();

@@ -106,7 +106,7 @@
   /* Calendar */
   /* The scroll handler keeps the view still when older months load above, so stop Chrome doing it too. */
   .cal #scroll { overflow-anchor:none; }
-  #calendar { padding-bottom:60vh; } /* room for the current month to scroll up to the top */
+  #calendar { padding-bottom:8px; }
   #calendar .grid { display:grid; grid-template-columns:repeat(7, 1fr) 1.2fr; gap:4px; text-align:center; }
   #calendar .wkdays { position:sticky; top:0; z-index:1; background:var(--bg); padding:8px 0; }
   #calendar b { font-size:13px; font-weight:600; color:var(--muted); }
@@ -119,7 +119,6 @@
   #calendar button small { display:block; font-size:11px; color:var(--muted); }
   #calendar button.today { box-shadow:inset 0 0 0 2px var(--accent); }
   #calendar button:disabled { background:transparent; opacity:.4; }
-  #calendar button:disabled.out { opacity:.2; }
   #calendar .wk { display:grid; place-content:center; font-size:13px; font-weight:600; color:var(--accent); }
   #calendar .wk.surplus { color:var(--err); }
   #calendar .wk small { font-size:11px; font-weight:400; color:var(--muted); }
@@ -243,7 +242,7 @@
   // Calories burned minus eaten over finished logged days (before today) of the Mon–Sun week containing d. Unlogged days are skipped.
   function weekDeficit(d) {
     const tdee = load('tdee', DEFAULT_TDEE), today = midnight();
-    let total = 0;
+    let total = null; // null = nothing logged on a finished day, so there's no total to show
     for (let i = 0; i < 7; i++) {
       const w = new Date(d.getFullYear(), d.getMonth(), d.getDate() - wd(d) + i), entries = load(dayKey(w), []);
       if (w < today && entries.length) total += tdee - netOf(entries);
@@ -273,8 +272,8 @@
     const head = el('div', '', { className: 'grid wkdays' });
     head.append(...['M', 'T', 'W', 'T', 'F', 'S', 'S', 'Deficit'].map(d => el('b', d)));
     $('calendar').replaceChildren(head, ...weeks);
-    shownMonth = null;
     scrollToMonth(calMonth);
+    showMonth(calMonth, true);
     highlightMonth();
   }
 
@@ -293,27 +292,38 @@
     }
     const def = weekDeficit(mon), wk = el('div', r(def).toLocaleString(), { className: 'wk' + (def < 0 ? ' surplus' : '') });
     wk.append(el('small', `${(Math.round(def / 350) / 10).toFixed(1)} lb`)); // ~3500 kcal per lb of fat; rounding first avoids "-0.0"
-    row.append(mon >= midnight() ? el('span', '') : wk); // no total until a day of the week has passed
+    row.append(def === null ? el('span', '') : wk); // blank until a logged day of the week has passed
     row.mon = mon;
     return row;
   }
 
-  // The month being viewed is the one owning most of the row under the top third of the view (its Thursday).
-  let shownMonth = null;
+  // Where the selection line sits in content coordinates at scroll position s: the centre of the view, except over
+  // the last half screen of scrolling it slides down to the bottom, so the newest weeks get picked without
+  // needing empty space below them.
+  const lineAt = (s, h, max) => s + h / 2 + Math.max(0, s - (max - h / 2));
+
+  // The month being viewed owns the week (by its Thursday) under the selection line.
   function highlightMonth() {
-    const sc = $('scroll'), line = sc.getBoundingClientRect().top + sc.clientHeight / 3;
+    const sc = $('scroll'), h = sc.clientHeight, max = sc.scrollHeight - h;
+    const line = sc.getBoundingClientRect().top - sc.scrollTop + lineAt(sc.scrollTop, h, max) - 1;
     const weeks = [...document.querySelectorAll('.week')];
     const row = weeks.find(w => w.getBoundingClientRect().bottom > line) ?? weeks.at(-1);
-    calMonth = new Date(monthOf(addDays(row.mon, 3)));
-    if (+calMonth === shownMonth) return; // restyling every row on each scroll event is wasted work
-    shownMonth = +calMonth;
-    for (const w of weeks) {
+    showMonth(new Date(monthOf(addDays(row.mon, 3))));
+  }
+
+  // Highlights month m: its days, and the deficits of weeks that touch it; everything else fades.
+  let shownMonth = null;
+  function showMonth(m, force) {
+    calMonth = m;
+    if (+m === shownMonth && !force) return; // restyling every row on each scroll event is wasted work
+    shownMonth = +m;
+    for (const w of document.querySelectorAll('.week')) {
       const days = [...w.querySelectorAll('button')];
       for (const b of days) b.classList.toggle('out', b.month !== shownMonth);
       w.lastChild.classList.toggle('out', !days.some(b => b.month === shownMonth));
     }
-    $('day').textContent = calMonth.toLocaleDateString(undefined, { month:'long', year:'numeric' });
-    $('next').disabled = +calMonth === +thisMonth();
+    $('day').textContent = m.toLocaleDateString(undefined, { month:'long', year:'numeric' });
+    $('next').disabled = +m === +thisMonth();
   }
 
   $('scroll').addEventListener('scroll', () => {
@@ -324,16 +334,20 @@
       for (let i = -26; i < 0; i++) older.push(weekEl(addDays(calStart, i * 7)));
       calStart = older[0].mon;
       $('calendar').firstChild.after(...older);
-      shownMonth = null; // new rows need styling
       sc.scrollTop += sc.scrollHeight - h;
+      showMonth(calMonth, true); // style the new rows
     }
     highlightMonth();
   }, { passive: true });
-  // Puts the row holding the 1st of month m at the top. Scrolls #scroll only (scrollIntoView would also
-  // nudge the fixed page); 32px leaves room for the weekday row.
+  // Scrolls so the selection line crosses the middle of month m (centred, except near the end). Scrolls #scroll
+  // only (scrollIntoView would also nudge the fixed page).
   function scrollToMonth(m, behavior = 'instant') {
-    const row = [...document.querySelectorAll('.week')].find(w => w.mon <= m && m < addDays(w.mon, 7)), sc = $('scroll');
-    if (row) sc.scrollBy({ top: row.getBoundingClientRect().top - sc.getBoundingClientRect().top - 32, behavior });
+    const weeks = [...document.querySelectorAll('.week')], rowOf = d => weeks.find(w => w.mon <= d && d < addDays(w.mon, 7));
+    const first = rowOf(m), last = rowOf(addDays(addMonths(m, 1), -1)), sc = $('scroll'), box = sc.getBoundingClientRect();
+    if (!first || !last) return;
+    const mid = sc.scrollTop - box.top + (first.getBoundingClientRect().top + last.getBoundingClientRect().bottom) / 2;
+    const h = sc.clientHeight, max = sc.scrollHeight - h;
+    sc.scrollTo({ top: mid <= max ? mid - h / 2 : (mid + max - h) / 2, behavior }); // lineAt solved for mid
   }
   const goMonth = n => scrollToMonth(addMonths(calMonth, n), 'smooth');
 

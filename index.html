@@ -116,9 +116,10 @@
   /* Calendar */
   /* The scroll handler keeps the view still when older months load above, so stop Chrome doing it too. */
   .cal #scroll { overflow-anchor:none; }
-  /* Each month's midpoint snaps to the centre of the area below the header, so crossing into the next one has some
-     resistance. The snap points are invisible markers placed at each month's midpoint. */
-  .cal #scroll { scroll-snap-type:y mandatory; }
+  /* Each month's midpoint snaps to 40% of the way down the area below the header (the centre of a snapport cut 20%
+     short at the bottom), so crossing into the next one has some resistance. The snap points are invisible markers
+     placed at each month's midpoint. Keep in step with snapCentre(). */
+  .cal #scroll { scroll-snap-type:y mandatory; scroll-padding-bottom:20%; }
   #calendar { position:relative; }
   #calendar .snap { position:absolute; left:0; right:0; height:2px; margin-top:-1px; scroll-snap-align:center; pointer-events:none; }
   #calendar .grid { display:grid; grid-template-columns:repeat(7, 1fr) 1.2fr; gap:4px; text-align:center; }
@@ -311,8 +312,8 @@
     return row;
   }
 
-  // The centre of the area below the header, in viewport coordinates: where a month's midpoint snaps to.
-  const snapCentre = () => { const box = $('scroll').getBoundingClientRect(); return (box.top + box.bottom) / 2; };
+  // Where a month's midpoint snaps to: 40% of the way down the area below the header, in viewport coordinates.
+  const snapCentre = () => { const box = $('scroll').getBoundingClientRect(); return box.top + box.height * .4; };
   const centreOf = e => { const b = e.getBoundingClientRect(); return (b.top + b.bottom) / 2; };
 
   // Puts a snap marker at the midpoint of every fully loaded month (top of its first row to bottom of its last).

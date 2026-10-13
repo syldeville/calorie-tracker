@@ -87,6 +87,7 @@
 
   /* Composer */
   form#composer { flex-shrink:0; background:var(--bg); padding:8px 16px max(8px, env(safe-area-inset-bottom)); }
+  .kb form#composer { padding-bottom:8px; } /* the keyboard covers the home indicator */
   .row { display:flex; gap:8px; align-items:flex-end; max-width:520px; margin:0 auto; padding:4px; background:var(--card);
          border-radius:26px; box-shadow:var(--shadow); }
   textarea { flex:1; font:inherit; resize:none; padding:10px 4px; border:0; outline:0; background:transparent; color:var(--fg); max-height:120px; }
@@ -581,8 +582,10 @@
 
   // iOS doesn't shrink the page for the keyboard; size the body to the visible area so the composer sits above it.
   // Pin the layout to the visible area only while the keyboard is up; otherwise CSS sizes it (see the iOS 26 note).
+  // innerHeight shrinks with the keyboard on iOS, so compare against the screen instead.
   const fit = () => {
-    const keyboard = visualViewport.height < innerHeight - 100;
+    const keyboard = visualViewport.height < screen.height * .75;
+    document.body.classList.toggle('kb', keyboard);
     document.body.style.setProperty('height', keyboard ? visualViewport.height + 'px' : '', keyboard ? 'important' : '');
     scrollTo(0, 0);
   };
